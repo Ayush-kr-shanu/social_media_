@@ -1,10 +1,14 @@
 const express = require("express");
 const bcrypt=require("bcrypt")
 const jwt=require("jsonwebtoken")
+
 const { UserModel } = require("../Models/User.model");
 
 require("dotenv").config()
 const userRoute = express.Router();
+
+const redis=require("redis")
+const redisClient=redis.createClient()
 
 userRoute.get("/", async (req, res) => {
   try {
@@ -66,5 +70,45 @@ userRoute.post("/login", async(req,res)=>{
         res.status(500).send({ msg: "something went wrong in loggin", error: err.message });
     }
 })
+
+userRoute.get("/users/friends", async (req, res) => {
+    try {
+      const { user } = req;
+  
+      const authenticatedUser = await UserModel.findById(user._id).populate("friends", "name email profilePicture");
+  
+      if (!authenticatedUser) {
+        return res.status(404).send({ msg: "User not found" });
+      }
+  
+      res.send(authenticatedUser.friends);
+    } catch (err) {
+      res.status(500).send({ msg: "Internal Server Error", error: err.message });
+    }
+});
+
+userRoute.post("/users/:id/friends", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { user } = req;
+
+    const targetUser = await UserModel.findById(id);
+    if (!targetUser) {
+      return res.status(404).send({ msg: "User not found" });
+    }
+
+    const isAlreadyRequested = targetUser.friendRequests.includes(user._id);
+    if (isAlreadyRequested) {
+      return res.status(400).send({ error: "Friend request already sent" });
+    }
+
+    targetUser.friendRequests.push(user._id);
+    await targetUser.save();
+
+    res.send({ message: "Friend request sent successfully" });
+  } catch (err) {
+    res.status(500).send({ msg: "Internal Server Error", err: err.message });
+  }
+});
 
 module.exports={userRoute}
